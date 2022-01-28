@@ -6,8 +6,8 @@ from flask import Flask
 from flask import request
 
 from api.utils import dicom_dir_walk, download_zip, validate_post_request
-from api.config import MammoCancerMirai
-from models import MiraiModel
+from api.config import MammoCancerMirai, DensityConfig
+from models import DensityModel, MiraiModel
 
 
 def build_app(config=None):
@@ -17,7 +17,7 @@ def build_app(config=None):
     if config is not None:
         app.config.from_mapping(config)
     else:
-        app.config.from_object(MammoCancerMirai())
+        app.config.from_object(DensityConfig())
 
     @app.route('/serve', methods=['POST'])  # TODO: Legacy endpoint, remove on 1.0
     @app.route('/dicom/files', methods=['POST'])
@@ -30,7 +30,7 @@ def build_app(config=None):
         response = {'data': None, 'message': None, 'statusCode': 200}
 
         try:
-            model = MiraiModel(app.config['ONCONET_ARGS'])
+            model = DensityModel(app.config['ONCONET_ARGS'])
             validate_post_request(request, required=model.required_data)
 
             app.logger.debug("Received JSON payload: {}".format(request.form.to_dict()))

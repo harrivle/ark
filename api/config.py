@@ -1,3 +1,5 @@
+import os
+
 class Args(object):
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
@@ -50,4 +52,38 @@ class MammoCancerMirai(Config):
         'use_second_order_risk_factor_features': False,
         'callibrator_path': 'models/snapshots/callibrators/MIRAI_FULL_PRED_RF.callibrator.p'
     }
+
+    ONCONET_ARGS = Args(ONCONET_CONFIG)
+
+
+class DensityConfig(Config):
+    NAME = '2D_Mammo_Breast_Density'
+    AGGREGATION = "vote"
+
+    def density_label_func(pred):
+        pred = pred.argmax()
+        density_labels = [1, 2, 3, 4]
+        return density_labels[pred]
+
+    ONCONET_CONFIG = {
+        'cuda': 'DEVICE' in os.environ and os.environ['DEVICE'] == 'GPU',
+        'img_mean': [7662.53827604],
+        'img_std': [12604.0682836],
+        'img_size': [256,256],
+        'num_chan': 3,
+        'num_gpus': 1,
+        'test_image_transformers': ['scale_2d'],
+        'test_tensor_transformers': ["force_num_chan_2d", "normalize_2d"],
+        'additional': None,
+        'snapshot': 'models/snapshots/mgh_mammo_density_sep26_2018.pt',
+        'label_map': density_label_func,
+        'model_name': 'mirai_density',
+        'video': False,
+        'use_precomputed_hiddens': False,
+        'use_risk_factors': False,
+        'callibrator_path': None,
+        'survival_analysis_setup': False,
+        'pred_risk_factors': False
+    }
+
     ONCONET_ARGS = Args(ONCONET_CONFIG)
