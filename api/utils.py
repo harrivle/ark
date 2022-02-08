@@ -1,56 +1,75 @@
-from collections import Iterable
-from pathlib import Path
+import os
+import requests
+import zipfile
+
+import pydicom
+from werkzeug.datastructures import FileStorage
 
 
-def validate_post_json(req, required=None, max_size=8 * 10**6):
+def validate_post_request(req, required=None, max_size=8 * 10**8):
     """Validates the DICOM POST JSON payload.
 
     Args:
         req (flask.Request): Flask request object
         required (list): List of keys required to be in the request JSON; default is None
-        max_size (int): Maximum size of the request body in bytes; default is 8*10^6
+        max_size (int): Maximum size of the request body in bytes; default is 8*10^8
 
     Returns:
         None
     """
-    if required is None:
-        required = []
+    if req.form and req.content_length > max_size:
+        raise RuntimeError("Request data too large: {} > {}".format(req.content_length, max_size))
 
-    if req.content_length > max_size:
-        raise RuntimeError("POST data too large: {} > {}".format(req.content_length, max_size))
-    elif req.is_json:
-        data = req.get_json()
-        invalid = []
+    if required is not None:
+        if 'data' in req.form:
+            data = req.form['data']
+            invalid = []
 
-        for item in required:
-            if item not in data:
-                invalid.append(item)
+            for item in required:
+                if item not in data:
+                    invalid.append(item)
 
-        if invalid:
-            raise RuntimeError("Invalid/missing keys in JSON: {}".format(invalid))
-    else:
-        raise RuntimeError("POST data not JSON: {}".format(req.get_data()))
-
-
-def validate_list_paths(fp):
-    """Validates the DICOM POST file path.
-
-    Args:
-        fp (Union[str, Path, Iterable]): A directory path or list of file paths
-
-    Returns:
-        list: List of file paths
-    """
-    if isinstance(fp, str) or isinstance(fp, Path):
-        fps = Path(fp)
-
-        if fps.is_dir():
-            fps = list(fps.iterdir())
+            if invalid:
+                raise RuntimeError("Missing keys in request JSON: {}".format(invalid))
         else:
-            raise NotADirectoryError("Not a valid directory: {}".format(fps))
-    elif isinstance(fp, Iterable):
-        fps = [Path(f) for f in fp]
-    else:
-        raise RuntimeError("Input is not a valid directory path or list of file paths: {}".format(fp))
+            raise RuntimeError("'data' not in request JSON; {}".format(req.form.keys()))
 
-    return fps
+    if 'dicom' not in req.files:
+        raise RuntimeError("Request does not contain `dicom` array")
+
+
+def download_zip(uri, path='/tmp'):
+    zip_path = path + '/dicom.zip'
+    dir_path = path + '/dicom'
+    results = requests.get(uri)
+
+    with open(zip_path, 'wb') as f:
+        f.write(results.content)
+
+    with zipfile.ZipFile(zip_path) as f:
+        f.extractall(path=dir_path)
+
+    os.remove(zip_path)
+
+
+def dicom_dir_walk(path='/tmp'):
+    dir_path = path + '/dicom'
+
+    dicom_files = []
+
+    for root, dirs, files in os.walk(dir_path):
+        if 'DICOMDIR' in files:
+            ds = pydicom.dcmread(os.path.join(root, 'DICOMDIR'))
+
+            for instance in ds.DirectoryRecordSequence:
+                if instance[0x0004, 0x1430].value == 'IMAGE':
+                    ref = instance[0x0004, 0x1500].value
+                    file_path = os.path.join(root, '/'.join(ref))
+
+                    f = open(file_path, 'rb')
+                    # TODO: change file IO
+                    dicom_files.append(FileStorage(f))
+
+                    break
+
+    return dicom_files

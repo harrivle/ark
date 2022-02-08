@@ -1,16 +1,20 @@
-FROM python:3.6-slim
-
-ENV NAME ark
+FROM python:3.8-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    dcmtk \
+    g++ \
+&& rm -rf /var/lib/apt/lists/*
 
-COPY main.py .
-COPY api api
-COPY model model
+COPY requirements.txt .
+RUN pip install --upgrade --no-cache-dir setuptools -r requirements.txt
+
+COPY . .
+
+ENV NAME ark
 
 EXPOSE 5000
 
-CMD python main.py
+ENTRYPOINT ["python", "main.py"]
