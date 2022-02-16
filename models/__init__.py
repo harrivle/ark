@@ -1,4 +1,8 @@
+from version import __version__
 from .base import EmptyModel
 from .mirai import MiraiModel
 
-__all__ = ["EmptyModel", "MiraiModel"]
+model_dict = {
+    'empty': EmptyModel,
+    'mirai': MiraiModel
+}

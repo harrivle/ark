@@ -5,20 +5,19 @@ import time
 from flask import Flask
 from flask import request
 
+import models
+from api import __version__ as api_version
 from api.utils import dicom_dir_walk, download_zip, validate_post_request
-from api.config import MammoCancerMirai
-from models import MiraiModel
 
 
-def build_app(config=None):
-    app = Flask('ark')
-    logging.getLogger('ark').setLevel(logging.DEBUG)
+def set_model(app):
+    model_name = app.config['MODEL_NAME']
+    model_args = app.config['ONCONET_ARGS']
 
-    if config is not None:
-        app.config.from_mapping(config)
-    else:
-        app.config.from_object(MammoCancerMirai())
+    app.config['MODEL'] = models.model_dict[model_name](model_args)
 
+
+def set_routes(app):
     @app.route('/serve', methods=['POST'])  # TODO: Legacy endpoint, remove on 1.0
     @app.route('/dicom/files', methods=['POST'])
     def dicom():
@@ -28,9 +27,9 @@ def build_app(config=None):
 
         app.logger.info("Request received at /dicom/files")
         response = {'data': None, 'message': None, 'statusCode': 200}
+        model = app.config['MODEL']
 
         try:
-            model = MiraiModel(app.config['ONCONET_ARGS'])
             validate_post_request(request, required=model.required_data)
 
             app.logger.debug("Received JSON payload: {}".format(request.form.to_dict()))
@@ -47,7 +46,7 @@ def build_app(config=None):
             response['message'] = msg
             response['statusCode'] = 400
 
-        response['runtime'] = time.time() - start
+        response['runtime'] = "{:.2f}s".format(time.time() - start)
 
         return response, response['statusCode']
 
@@ -59,10 +58,9 @@ def build_app(config=None):
 
         app.logger.info("Request received at /dicom/uri")
         response = {'data': None, 'message': None, 'statusCode': 200}
+        model = app.config['MODEL']
 
         try:
-            model = MiraiModel(app.config['ONCONET_ARGS'])
-
             payload = request.get_json()
             app.logger.debug("Received JSON payload: {}".format(payload))
 
@@ -76,8 +74,41 @@ def build_app(config=None):
             response['message'] = msg
             response['statusCode'] = 400
 
-        response['runtime'] = time.time() - start
+        response['runtime'] = "{:.2f}s".format(time.time() - start)
 
         return response, response['statusCode']
+
+    @app.route('/info', methods=['GET'])
+    def info():
+        """Endpoint to return general info of the API
+        """
+        app.logger.info("Request received at /info")
+        response = {'data': None, 'message': None, 'statusCode': 200}
+
+        try:
+            info_dict = {
+                'apiVersion': app.config['API_VERSION'],
+                'modelName': app.config['MODEL_NAME'],
+                'modelVersion': app.config['MODEL'].__version__,
+            }
+
+            response['data'] = info_dict
+        except Exception as e:
+            msg = "{}: {}".format(type(e).__name__, e)
+            app.logger.error(msg)
+            response['message'] = msg
+            response['statusCode'] = 400
+
+        return response['statusCode']
+
+
+def build_app(config):
+    app = Flask('ark')
+    app.config.from_mapping(config)
+    logging.getLogger('ark').setLevel(logging.DEBUG)
+
+    app.config['API_VERSION'] = api_version
+    set_model(app)
+    set_routes(app)
 
     return app
