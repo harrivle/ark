@@ -1,20 +1,24 @@
 import json
 import logging
 import time
+import tracemalloc
 
 from flask import Flask
 from flask import request
 
-import models
 from api import __version__ as api_version
 from api.utils import dicom_dir_walk, download_zip, validate_post_request
+from models import model_dict
 
 
 def set_model(app):
     model_name = app.config['MODEL_NAME']
-    model_args = app.config['ONCONET_ARGS']
+    model_args = app.config['MODEL_ARGS']
 
-    app.config['MODEL'] = models.model_dict[model_name](model_args)
+    if model_name in model_dict:
+        app.config['MODEL'] = model_dict[model_name](model_args)
+    else:
+        raise KeyError("Model '{}' not found in model dictionary".format(model_name))
 
 
 def set_routes(app):
@@ -30,6 +34,9 @@ def set_routes(app):
         model = app.config['MODEL']
 
         try:
+            snapshot1 = tracemalloc.take_snapshot()
+            print('form: ', request.form.to_dict())
+            print('files: ', request.files)
             validate_post_request(request, required=model.required_data)
 
             app.logger.debug("Received JSON payload: {}".format(request.form.to_dict()))
@@ -40,6 +47,21 @@ def set_routes(app):
             app.logger.debug("Received {} files".format(len(dicom_files)))
 
             response["data"] = model.run_model(dicom_files, payload=payload)
+
+            snapshot2 = tracemalloc.take_snapshot()
+
+            top_stats = snapshot2.compare_to(snapshot1, 'lineno')
+
+            for stat in top_stats[:5]:
+                app.logger.debug(stat)
+
+            curr, peak = tracemalloc.get_traced_memory()
+            if 'CURR' not in app.config:
+                app.config['CURR'] = curr/(1024*1024)
+                app.config['PEAK'] = peak/(1024*1024)
+
+            app.logger.debug("Current Mem: {}, Peak Mem: {}".format(curr/(1024*1024), peak/(1024*1024)))
+            app.logger.debug("Current Mem Diff: {}, Peak Mem Diff: {}".format((curr-app.config['CURR'])/(1024*1024), (peak-app.config['PEAK'])/(1024*1024)))
         except Exception as e:
             msg = "{}: {}".format(type(e).__name__, e)
             app.logger.error(msg)

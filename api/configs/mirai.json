@@ -1,7 +1,7 @@
 {
   "MODEL_NAME": "mirai",
   "ENV": "prod",
-  "ONCONET_ARGS": {
+  "MODEL_ARGS": {
     "cuda": false,
     "img_mean": [
       7047.99
